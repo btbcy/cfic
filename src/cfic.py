@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from preprocessing import clean_text, article_to_sentences
 
 
@@ -24,18 +25,18 @@ class CFIC:
         self.topk = topk
         self.max_length = max_length
         self.trie_root = TrieNode()
-        self.original_sentences = article_to_sentences(article)
-        self.sentence_tokens = []
-        self.preprocess()
+        self.sentences = article_to_sentences(self.article)
+        self.sent_tokens = []
+        self._preprocess()
         self.prompt_prefix = "Below is an article. Memorize the article and answer my question after the article.\nThe article begins.\n"
         # self.prompt_suffix_template = "\nNow the article ends.\nUsing only the exact sentences from the above article to answer my question.\nQuestion: {}"
         self.prompt_suffix_template = "\nNow the article ends.\nUsing only the exact sentences from the above article to answer the Question without other words.\nQuestion: {}"
 
-    def preprocess(self):
-        for sent in self.original_sentences:
-            self.sentence_tokens.append(self.tokenizer(sent).input_ids[1:])
+    def _preprocess(self):
+        for sent in self.sentences:
+            self.sent_tokens.append(self.tokenizer(sent).input_ids[1:])
 
-        for idx, sent in enumerate(self.sentence_tokens):
+        for idx, sent in enumerate(self.sent_tokens):
             self._insert_sentence_to_trie(sent, idx)
 
     def _insert_sentence_to_trie(self, tgt_sentence, tgt_sent_id):
@@ -48,7 +49,7 @@ class CFIC:
             return
 
         dup_sent_id = node.sentence_id
-        dup_sentence = self.sentence_tokens[dup_sent_id]
+        dup_sentence = self.sent_tokens[dup_sent_id]
         if (dup_sentence == tgt_sentence):
             return
         node.sentence_id = -1
@@ -75,6 +76,13 @@ class CFIC:
             else:
                 return curr
 
+    def generate_grounding_texts(self, question):
+        cspd_output = self.constrained_sentence_prefix_decoding(question)
+        top_sent_start_indices, past_key_values = cspd_output
+
+        gounding_texts = self.skip_decoding(top_sent_start_indices, past_key_values)
+        return gounding_texts
+
     def constrained_sentence_prefix_decoding(self, question):
         input_text = self.prompt_prefix + self.article + self.prompt_suffix_template.format(question)
         input_ids = self.tokenizer(input_text, return_tensors="pt").input_ids.to("cuda")
@@ -85,7 +93,7 @@ class CFIC:
         candidates = list(self.trie_root.children.keys())
         top_tokens = self._constrained_topk(logits, candidates, self.topk)
 
-        top_sent_index = []
+        top_sent_indices = []
         for token in top_tokens:
             node = self.trie_root
             curr_past_key_values = past_key_values
@@ -100,8 +108,8 @@ class CFIC:
                 candidates = list(node.children.keys())
                 token = self._constrained_topk(logits, candidates, topk=1)[0]
 
-            top_sent_index.append(node.children[token].sentence_id)
-        return top_sent_index
+            top_sent_indices.append(node.children[token].sentence_id)
+        return top_sent_indices, past_key_values
 
     def _constrained_topk(self, logits, candidate_ids, topk):
         candidate_ids = torch.tensor(candidate_ids)
@@ -109,5 +117,49 @@ class CFIC:
         top_tokens = candidate_ids[temp_index]
         return top_tokens.tolist()
 
-    def skip_decoding(self):
-        pass
+    def skip_decoding(self, top_start_sent_indices, past_key_values):
+        top_end_sent_indices = []
+        for sent_idx in top_start_sent_indices:
+            curr_length = len(self.sent_tokens[sent_idx])
+            curr_sent = self.sentences[sent_idx]
+            curr_idx = sent_idx
+            eos_probs, cand_end_indices = [], []
+            while curr_idx < len(self.sentences) and curr_length <= self.max_length:
+                input_ids = self.tokenizer(curr_sent, return_tensors="pt").input_ids.to("cuda")
+                with torch.no_grad():
+                    logits = self.model(
+                        input_ids,
+                        past_key_values=past_key_values,
+                        use_cache=True).logits
+                logits = logits[0, -1]
+                prob = F.softmax(logits, dim=-1)[self.tokenizer.eos_token_id].item()
+                eos_probs.append(prob)
+                cand_end_indices.append(curr_idx)
+                curr_idx += 1
+                curr_length += len(self.sent_tokens[curr_idx])
+                curr_sent += " " + self.sentences[curr_idx]
+            _, max_idx = torch.max(torch.tensor(eos_probs), dim=0)
+            top_end_sent_indices.append(cand_end_indices[max_idx])
+
+        nonoverlapping_intervals = self._merge_overlapping(
+            top_start_sent_indices, top_end_sent_indices)
+
+        self.grounding_texts = []
+        for start, end in nonoverlapping_intervals:
+            self.grounding_texts.append(" ".join(self.sentences[start:end+1]))
+        return self.grounding_texts
+
+    def _merge_overlapping(self, top_start_sent_indices, top_end_sent_indices):
+        """leetcode 56"""
+        intervals = list(zip(top_start_sent_indices, top_end_sent_indices))
+        intervals.sort(key=lambda x: x[0])
+        start, end = intervals[0]
+        nonoverlapping_intervals = []
+        for i in range(1, len(intervals)):
+            if intervals[i][0] <= end:
+                end = max(end, intervals[i][1])
+            else:
+                nonoverlapping_intervals.append((start, end))
+                start, end = intervals[i]
+        nonoverlapping_intervals.append((start, end))
+        return nonoverlapping_intervals
