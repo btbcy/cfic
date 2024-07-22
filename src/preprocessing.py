@@ -4,16 +4,16 @@ from nltk.tokenize import sent_tokenize
 
 
 def extract_sentences(article):
-    article_cleaned = _cleaning(article)
-    sentences = _tokenize_sentences(article_cleaned)
+    article_cleaned = clean_text(article)
+    sentences = article_to_sentences(article_cleaned)
     return sentences
 
 
-def _cleaning(article):
+def clean_text(article):
     article_cleaned = re.sub(r'\\n', r'\n', article)
     return article_cleaned
 
 
-def _tokenize_sentences(article):
+def article_to_sentences(article):
     sentences = sent_tokenize(article)
     return sentences

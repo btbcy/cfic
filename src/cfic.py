@@ -1,4 +1,5 @@
-from preprocessing import extract_sentences
+import torch
+from preprocessing import clean_text, article_to_sentences
 
 
 class TrieNode:
@@ -19,16 +20,20 @@ class CFIC:
     def __init__(self, model, tokenizer, article, topk=3, max_length=256):
         self.model = model
         self.tokenizer = tokenizer
+        self.article = clean_text(article)
         self.topk = topk
         self.max_length = max_length
         self.trie_root = TrieNode()
-        self.original_sentences = extract_sentences(article)
+        self.original_sentences = article_to_sentences(article)
         self.sentence_tokens = []
         self.preprocess()
+        self.prompt_prefix = "Below is an article. Memorize the article and answer my question after the article.\nThe article begins.\n"
+        # self.prompt_suffix_template = "\nNow the article ends.\nUsing only the exact sentences from the above article to answer my question.\nQuestion: {}"
+        self.prompt_suffix_template = "\nNow the article ends.\nUsing only the exact sentences from the above article to answer the Question without other words.\nQuestion: {}"
 
     def preprocess(self):
         for sent in self.original_sentences:
-            self.sentence_tokens.append(self.tokenizer.tokenize(sent))
+            self.sentence_tokens.append(self.tokenizer(sent).input_ids[1:])
 
         for idx, sent in enumerate(self.sentence_tokens):
             self._insert_sentence_to_trie(sent, idx)
@@ -69,3 +74,40 @@ class CFIC:
                     return curr
             else:
                 return curr
+
+    def constrained_sentence_prefix_decoding(self, question):
+        input_text = self.prompt_prefix + self.article + self.prompt_suffix_template.format(question)
+        input_ids = self.tokenizer(input_text, return_tensors="pt").input_ids.to("cuda")
+
+        with torch.no_grad():
+            logits, past_key_values = self.model(input_ids).to_tuple()
+        logits = logits[0, -1].cpu()
+        candidates = list(self.trie_root.children.keys())
+        top_tokens = self._constrained_topk(logits, candidates, self.topk)
+
+        top_sent_index = []
+        for token in top_tokens:
+            node = self.trie_root
+            curr_past_key_values = past_key_values
+            while node.children[token].sentence_id == -1:
+                node = node.children[token]
+                with torch.no_grad():
+                    curr_logits, curr_past_key_values = self.model(
+                        torch.tensor([[token]], device="cuda"),
+                        past_key_values=curr_past_key_values,
+                        use_cache=True).to_tuple()
+                curr_logits = curr_logits[0, -1].cpu()
+                candidates = list(node.children.keys())
+                token = self._constrained_topk(logits, candidates, topk=1)[0]
+
+            top_sent_index.append(node.children[token].sentence_id)
+        return top_sent_index
+
+    def _constrained_topk(self, logits, candidate_ids, topk):
+        candidate_ids = torch.tensor(candidate_ids)
+        _, temp_index = torch.topk(logits[candidate_ids], topk)
+        top_tokens = candidate_ids[temp_index]
+        return top_tokens.tolist()
+
+    def skip_decoding(self):
+        pass
