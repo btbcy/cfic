@@ -1,0 +1,22 @@
+[
+    {
+        "question": "When were the GitHub accounts involved in the incident created?",
+        "answer": "The GitHub account involved in this incident had been created in 2021 and 2022, gradually gaining the trust of the original XZ maintainers. This infiltration process has attracted significant attention and has once again sparked discussions on the security of open-source software.\n\n"
+    },
+    {
+        "question": "Which component is involved in the Flipping Pages vulnerability?",
+        "answer": "Two other Linux vulnerabilities worth noting are Flipping Pages, involving the netfilter component, and WallEscape, involving the util-linux package."
+    },
+    {
+        "question": "What organization recently issued a data breach notification?",
+        "answer": "The OWASP Foundation, well-known for publishing the top ten web application security risks, recently issued a data breach notification."
+    },
+    {
+        "question": "What type of vulnerabilities did Ivanti announce at the beginning of this year?",
+        "answer": "At the beginning of this year, Ivanti announced a series of Connect Secure and Policy Secure vulnerabilities, once again shocking the global cybersecurity community."
+    },
+    {
+        "question": "How many schools' systems were successfully accessed by using the same set of account passwords?",
+        "answer": "The other issue is the problem of using generic account passwords. The investigation found that hackers first infiltrated the system of one school, obtaining the login credentials for that school's system. However, using the same set of account passwords, hackers could also successfully log into the systems of the other six schools."
+    }
+]
