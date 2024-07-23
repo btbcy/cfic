@@ -140,6 +140,8 @@ class CFIC:
                 curr_idx += 1
                 curr_length += len(self.sent_tokens[curr_idx])
                 curr_sent += " " + self.sentences[curr_idx]
+            if len(eos_probs) == 0:
+                continue
             _, max_idx = torch.max(torch.tensor(eos_probs), dim=0)
             top_end_sent_indices.append(cand_end_indices[max_idx])
 
