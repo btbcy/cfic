@@ -28,9 +28,10 @@ class CFIC:
         self.sentences = article_to_sentences(self.article)
         self.sent_tokens = []
         self._preprocess()
-        self.prompt_prefix = "Below is an article. Memorize the article and answer my question after the article.\nThe article begins.\n"
-        # self.prompt_suffix_template = "\nNow the article ends.\nUsing only the exact sentences from the above article to answer my question.\nQuestion: {}"
-        self.prompt_suffix_template = "\nNow the article ends.\nUsing only the exact sentences from the above article to answer the Question without other words.\nQuestion: {}"
+        # self.prompt_prefix = "Below is an article. Read the article and answer my question after the article.\nThe article begins:\n"
+        self.prompt_prefix = "Below is an article. Memorize the article and select several sentences related to my question after the article.\nThe article begins:\n"
+        # self.prompt_suffix_template = "\nNow the article ends.\nSelect several sentences from the article to answer my question.\nQuestion: {}"
+        self.prompt_suffix_template = "\nNow the article ends.\nSelect the single most relevant paragraph from the above article that answers the question. Return only the original paragraph without any additional information.\nQuestion: {}\nAnswer: "
 
     def _preprocess(self):
         for sent in self.sentences:
@@ -130,7 +131,7 @@ class CFIC:
             curr_sent = self.sentences[sent_idx]
             curr_idx = sent_idx
             eos_probs, cand_end_indices = [], []
-            while curr_idx < len(self.sentences) and curr_length <= self.max_length:
+            while curr_length <= self.max_length:
                 input_ids = self.tokenizer(curr_sent, return_tensors="pt").input_ids.to("cuda")
                 logits, _ = self._compute_next_token_logits_with_cache(input_ids, past_key_values)
                 logits = logits[0, -1]
@@ -138,6 +139,8 @@ class CFIC:
                 eos_probs.append(prob)
                 cand_end_indices.append(curr_idx)
                 curr_idx += 1
+                if curr_idx >= len(self.sentences):
+                    break
                 curr_length += len(self.sent_tokens[curr_idx])
                 curr_sent += " " + self.sentences[curr_idx]
             if len(eos_probs) == 0:
