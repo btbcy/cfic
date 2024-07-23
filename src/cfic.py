@@ -87,8 +87,7 @@ class CFIC:
         input_text = self.prompt_prefix + self.article + self.prompt_suffix_template.format(question)
         input_ids = self.tokenizer(input_text, return_tensors="pt").input_ids.to("cuda")
 
-        with torch.no_grad():
-            logits, past_key_values = self.model(input_ids).to_tuple()
+        logits, past_key_values = self._compute_next_token_logits_with_cache(input_ids)
         logits = logits[0, -1].cpu()
         candidates = list(self.trie_root.children.keys())
         top_tokens = self._constrained_topk(logits, candidates, self.topk)
@@ -99,17 +98,24 @@ class CFIC:
             curr_past_key_values = past_key_values
             while node.children[token].sentence_id == -1:
                 node = node.children[token]
-                with torch.no_grad():
-                    curr_logits, curr_past_key_values = self.model(
-                        torch.tensor([[token]], device="cuda"),
-                        past_key_values=curr_past_key_values,
-                        use_cache=True).to_tuple()
+                curr_logits, curr_past_key_values = self._compute_next_token_logits_with_cache(
+                    torch.tensor([[token]], device="cuda"), curr_past_key_values)
                 curr_logits = curr_logits[0, -1].cpu()
                 candidates = list(node.children.keys())
                 token = self._constrained_topk(logits, candidates, topk=1)[0]
 
             top_sent_indices.append(node.children[token].sentence_id)
         return top_sent_indices, past_key_values
+
+    @torch.no_grad()
+    def _compute_next_token_logits_with_cache(self, input_ids, past_key_values=None):
+        if past_key_values is None:
+            output = self.model(input_ids)
+        else:
+            output = self.model(input_ids, past_key_values=past_key_values, use_cache=True)
+        logits = output.logits
+        past_key_values = output.past_key_values
+        return logits, past_key_values
 
     def _constrained_topk(self, logits, candidate_ids, topk):
         candidate_ids = torch.tensor(candidate_ids)
@@ -126,11 +132,7 @@ class CFIC:
             eos_probs, cand_end_indices = [], []
             while curr_idx < len(self.sentences) and curr_length <= self.max_length:
                 input_ids = self.tokenizer(curr_sent, return_tensors="pt").input_ids.to("cuda")
-                with torch.no_grad():
-                    logits = self.model(
-                        input_ids,
-                        past_key_values=past_key_values,
-                        use_cache=True).logits
+                logits, _ = self._compute_next_token_logits_with_cache(input_ids, past_key_values)
                 logits = logits[0, -1]
                 prob = F.softmax(logits, dim=-1)[self.tokenizer.eos_token_id].item()
                 eos_probs.append(prob)
