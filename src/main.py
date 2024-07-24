@@ -14,7 +14,7 @@ def create_parser():
                         help='/path/to/article.txt')
     parser.add_argument('--question_path', type=str,
                         help='/path/to/question.json')
-    parser.add_argument('--output_path', type=str,
+    parser.add_argument('--output_path', type=str, default=None,
                         help='/path/to/output.json')
     parser.add_argument('--model', type=str,
                         default='TinyLlama/TinyLlama-1.1B-Chat-v1.0')
@@ -64,8 +64,16 @@ def main(args):
         results[idx]['question'] = q
         results[idx]['grounding_texts'] = cfic_generator.generate_grounding_texts(q)
 
-    with open(args.output_path, 'w') as f:
-        json.dump(results, f, indent=2)
+    if args.output_path is None:
+        for idx, one_result in enumerate(results):
+            print(f"[Question]\n{one_result['question']}\n")
+            print("[Grounding texts]")
+            for gt in one_result['grounding_texts']:
+                print(f"{gt}\n")
+            print("---\n")
+    else:
+        with open(args.output_path, 'w') as f:
+            json.dump(results, f, indent=2)
 
 
 if __name__ == '__main__':
