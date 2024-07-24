@@ -9,7 +9,6 @@ pip install -r requirements.txt
 ```
 
 
-
 ## Usage
 
 ```
@@ -19,7 +18,7 @@ python src/main.py [-h] [--article_path ARTICLE_PATH] [--question_path QUESTION_
 
 - `--article_path`: Path to the input article file (plain text)
 - `--question_path`: Path to the questions file (JSON format)
-- `--output_path`: Path to save the output results (in JSON format)
+- `--output_path`: Path to save the output results (in JSON format). If not specified, results will be displayed on the screen.
 - `--model`: Name of the language model (default: TinyLlama/TinyLlama-1.1B-Chat-v1.0)
 - `--cache_dir`: Directory to cache the language model and tokenizer
 - `--topk`: Number of candidate sentences (default: 3)
@@ -33,6 +32,12 @@ python src/main.py --article_path data/test_long_knowledge.txt --question_path d
 
 This command will process the article in `test_long_knowledge.txt`, answer questions from `questions.json`, and save the results in `result.json`. 
 
+```
+bash run_cfic.sh /path/to/article.txt /path/to/question.json
+```
+
+This command will process the article, answer questions as specified, and print the results to the console.
+
 ### Input Formats
 
 - Article: Plain text file containing the document to be queried
@@ -40,7 +45,9 @@ This command will process the article in `test_long_knowledge.txt`, answer quest
 
 ### Output
 
-The script generates a JSON file containing the original questions and the grounding texts for each question. Overlapping grounding passages for the same question are merged into a single passage.
+The script generates results containing the original questions and the grounding texts for each question. Overlapping passages for the same question are merged into a single passage.
+
+If an output path is specified, the results are saved as a JSON file. Otherwise, they are displayed on the screen.
 
 ## Project Structure
 
